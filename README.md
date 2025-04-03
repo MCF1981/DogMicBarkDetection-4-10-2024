@@ -14,9 +14,10 @@ This project captures audio from an ESP32 microphone (DogMic), streams it to a F
 - Sends sound classification logs and alerts
 - Ready for integration with Home Assistant or MQTT
 
----
-
+<pre>
 ## 📦 Project Structure
+
+```
 bark_server/
 ├── app.py                # Flask server (upload + log endpoint)
 ├── yamnet_plot.py        # Plots log-mel spectrograms from .wav files
@@ -24,7 +25,9 @@ bark_server/
 ├── .gitignore
 ├── README.md             # This file
 └── requirements.txt      # Python dependencies
----
+```
+</pre>
+
 
 ## 🔧 Setup Instructions
 
