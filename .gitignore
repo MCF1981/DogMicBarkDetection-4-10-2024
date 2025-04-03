@@ -1,0 +1,6 @@
+yamnet-env/
+venv/
+__pycache__/
+*.pyc
+uploads/
+*.wav
