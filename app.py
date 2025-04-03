@@ -4,6 +4,15 @@ import numpy as np
 import scipy.signal
 import librosa
 import paho.mqtt.publish as publish
+import logging
+from datetime import datetime
+
+# Configure logging to file
+logging.basicConfig(
+    filename='bark_server.log',
+    level=logging.INFO,
+    format='%(asctime)s — %(levelname)s — %(message)s'
+)
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -37,8 +46,10 @@ def upload():
         scores_np = scores.numpy()
         top_class = np.argmax(np.mean(scores_np, axis=0))
         label = class_names[top_class]
-
-        print(f"[UPLOAD] Received {len(raw_audio)} bytes — Predicted sound: {label}")
+        with open("bark_log.csv", "a") as f:
+            f.write(f"{datetime.now().isoformat()},{label}\n")
+        logging.info(f"[UPLOAD] Received {len(raw_audio)} bytes — Predicted sound: {label}") 
+       # print(f"[UPLOAD] Received {len(raw_audio)} bytes — Predicted sound: {label}")
 
         # Publish to MQTT
         publish.single(
@@ -57,7 +68,8 @@ def upload():
 def log():
     try:
         message = request.data.decode("utf-8")
-        print(f"[ESP32] {message}")
+        logging.info(f"[ESP32] {message}")
+#       print(f"[ESP32] {message}")
         return '', 200
     except Exception as e:
         print("[ERROR] Log failed:", e)
