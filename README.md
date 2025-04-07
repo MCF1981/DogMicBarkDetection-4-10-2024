@@ -1,80 +1,101 @@
-# 🐾 DogMic Audio Classification System
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.19.0-blue?logo=tensorflow&logoColor=white)
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Compatible-41BDF5?logo=home-assistant&logoColor=white)
-This project captures audio from an ESP32 microphone (DogMic), streams it to a Flask server running on a Raspberry Pi, analyzes the sound using Google's YAMNet model, and visualizes it as a log-mel spectrogram. Designed for bark detection, noise classification, and Home Assistant integrations.
+# 🐾 Bark Server — Flask + TensorFlow YAMNet Audio Classifier
 
----
+This is the Dockerized Flask server that accepts 1-second audio clips (raw 8-bit, 16kHz), classifies them using YAMNet (TensorFlow), and publishes predictions to MQTT for Home Assistant automations.
 
 ## 🚀 Features
 
-- ESP32 firmware captures 1-second, 16kHz audio clips
-- Sends audio over Wi-Fi via HTTP POST to Flask server
-- Flask server saves and analyzes audio with YAMNet (TensorFlow)
-- Generates log-mel spectrograms with frequency/time/dB mapping
-- Sends sound classification logs and alerts
-- Ready for integration with Home Assistant or MQTT
+- Flask server with endpoints: `/upload`, `/log`, `/predict`, `/image`, `/health`
+- Classifies sounds via [YAMNet](https://tfhub.dev/google/yamnet/1) from TensorFlow Hub
+- Publishes prediction to `dogmic/audio_prediction` via MQTT
+- Generates `latest_plot.png` and `bark_log.csv` for logging
+- Fully containerized via Docker
 
-<pre>
 ## 📦 Project Structure
-
-```
 bark_server/
-├── app.py                # Flask server (upload + log endpoint)
-├── yamnet_plot.py        # Plots log-mel spectrograms from .wav files
-├── uploads/              # Saved audio clips (gitignored)
-├── .gitignore
-├── README.md             # This file
-└── requirements.txt      # Python dependencies
-```
-</pre>
+├── app.py                # Flask app
+├── requirements.txt      # Python deps
+├── bark_log.csv          # CSV of all predictions
+├── bark_server.log       # Server logs
+├── yamnet_plot.py        # Spectrogram plotting
+├── last_audio.raw/.wav   # Most recent raw + converted audio
+├── latest_plot.png       # Most recent spectrogram
+└── Dockerfile
+---
 
+## 🐳 Docker Usage
 
-## 🔧 Setup Instructions
-
-### 1. Clone the repo
-
-```bash
-git clone git@github.com:MCF1981/dogmic-audio-system.git
-cd dogmic-audio-system
-
-2. 🐳 Build & Run the Server in Docker
-# (Re)build the Docker image
+# Build the image
 docker build -t bark-server .
 
-# Run the server container
+# Run the container
 docker run -d \
   --name bark-server \
-  --restart always \
   -p 5050:5050 \
+  --restart always \
   bark-server
-3. 🔍 Check Logs
-# Live log stream
-docker logs bark-server --follow
 
-# Tail the latest lines of server log (inside container)
-docker exec -it bark-server tail /app/bark_server.log
-4. 🔬 Test the Endpoints
-# Log test message
-curl -X POST http://localhost:5050/log -d "Hello from test log"
+## 🔬 API Endpoints
 
-# Simulate upload (replace `test.raw` with valid raw 16kHz 8-bit audio file)
-curl -X POST --data-binary @test.raw http://localhost:5050/upload
+| Method | Endpoint   | Description                         |
+|--------|------------|-------------------------------------|
+| POST   | `/upload`  | Raw 8-bit 1s audio, returns label   |
+| POST   | `/predict` | Prediction from audio chunk         |
+| POST   | `/log`     | Logs from ESP32                     |
+| GET    | `/image`   | Returns `latest_plot.png`           |
+| GET    | `/health`  | Returns model + server status       |
 
-📡 ESP32 Firmware Quick Reference
-ESP32 code sends:
-	•	/upload: Raw 8-bit audio (16000 samples per second)
-	•	/log: Text messages like status or predictions
+## 🧪 Test It Locally
+# Generate silent test audio (1s @ 16kHz)
+dd if=/dev/zero bs=1 count=16000 of=test.raw
 
-Expect logs like this:
-[ESP32] Prediction: Bark (0.82)
-[UPLOAD] 16000 bytes → Bark (0.82)
+# Send it to /upload
+curl -X POST http://localhost:5050/upload \
+  --data-binary @test.raw \
+  -H "Content-Type: application/octet-stream"
 
-🔁 Rebuilding Docker Image After Code Change
+⸻
+
+🏠 Home Assistant Integration
+	•	MQTT Topic: dogmic/audio_prediction
+	•	Broker: 192.168.68.92 (HA IP)
+	•	Example HA sensors:
+	•	binary_sensor.bark_detected
+	•	sensor.bark_detected_status
+	•	sensor.dog_mic_volume_db
+
+
+⸻
+
+📊 Dashboard Cards
+
+See dogmic-system/dashboards/dogmic-dashboard.yaml
+	•	Mic Volume (Gauge)
+	•	Prediction (Markdown)
+	•	Snapshot preview
+	•	Tunnel health status
+
+⸻
+
+🧯 Recovery Notes
+	•	If HA tunnel breaks, restart Cloudflared add-on
+	•	Rebuild Flask container:
 docker stop bark-server
 docker rm bark-server
 docker build -t bark-server .
-docker run -d \
-  --name bark-server \
-  --restart always \
-  -p 5050:5050 \
-  bark-server
+docker run -d --name bark-server -p 5050:5050 --restart always bark-server
+
+🧠 Maintained by @MCF1981
+
+Part of the CottageFarm Smart Home System
+MIT License
+---
+
+### ✅ Next Steps:
+
+```bash
+cd ~/bark_server
+nano README.md      # paste the above into the file
+Then:
+git add README.md
+git commit -m "📖 Clean up Bark Server README with Docker, HA, MQTT integration"
+git push
