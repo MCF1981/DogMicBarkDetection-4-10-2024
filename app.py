@@ -1,5 +1,7 @@
 import logging
 from flask import Flask, request
+from flask import send_file
+import os
 import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
@@ -9,8 +11,8 @@ import paho.mqtt.publish as publish
 from datetime import datetime
 
 # ✅ Logging config
-LOG_PATH = "/home/mcf/bark_server/bark_server.log"
-CSV_LOG = "/home/mcf/bark_server/bark_log.csv"
+LOG_PATH = "bark_server.log"
+CSV_LOG = "bark_log.csv"
 
 logging.basicConfig(
     filename=LOG_PATH,
@@ -41,6 +43,11 @@ app = Flask(__name__)
 def upload():
     try:
         raw_audio = np.frombuffer(request.data, dtype=np.uint8)
+
+        # Save latest audio for plotting
+        with open("last_audio.raw", "wb") as f:
+            f.write(request.data)
+
         float_audio = (raw_audio.astype(np.float32) - 128.0) / 128.0
         resampled = scipy.signal.resample(float_audio, 16000)
         waveform = resampled.reshape(-1)
@@ -115,6 +122,25 @@ def classify_audio(audio_bytes):
     except Exception as e:
         logging.error(f"[CLASSIFY ERROR] {e}")
         return "error"
+
+@app.route("/image")
+def get_latest_image():
+    path = "latest_plot.png"  # Adjusted to match local filename
+    if os.path.exists(path):
+        return send_file(path, mimetype='image/png')
+    else:
+        return "No image available", 404
+
+@app.route("/", methods=["GET"])
+def root():
+    return {
+        "status": "bark-server running",
+        "routes": ["/upload", "/predict", "/log", "/image", "/health"]
+    }
+
+@app.route("/health", methods=["GET"])
+def health():
+    return {"status": "ok", "model_loaded": yamnet_model is not None}, 200
 
 if __name__ == "__main__":
     print("✅ Bark server running...")
