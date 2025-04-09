@@ -8,7 +8,6 @@ charset-normalizer==3.4.1
 click==8.1.8
 decorator==5.2.1
 Flask==3.1.0
-flatbuffers==20181003210633
 gast==0.6.0
 google-pasta==0.2.0
 grpcio==1.71.0

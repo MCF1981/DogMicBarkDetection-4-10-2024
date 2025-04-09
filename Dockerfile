@@ -20,4 +20,4 @@ RUN pip install --upgrade pip && \
 
 EXPOSE 5050
 
-CMD ["python", "app.py"]
+CMD ["python3", "app.py"]
