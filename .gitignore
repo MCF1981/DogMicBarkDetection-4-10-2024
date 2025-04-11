@@ -4,3 +4,11 @@ __pycache__/
 *.pyc
 uploads/
 *.wav
+# Logs and raw/test files
+bark_log.csv
+bark_server.log
+last_audio.raw
+test.raw
+test.png
+latest_plot.png
+plot-env/
