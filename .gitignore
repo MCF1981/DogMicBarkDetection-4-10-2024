@@ -12,3 +12,9 @@ test.raw
 test.png
 latest_plot.png
 plot-env/
+# Ignore logs, data, and runtime-generated files
+*.log
+*.csv
+*.raw
+*.sh
+__pycache__/
