@@ -41,7 +41,7 @@ MQTT_HEARTBEAT_TOPIC = "dogmic/heartbeat"
 MQTT_CLIENT_ID = "bark_server"
 
 # 🔌 Persistent MQTT Client Setup
-mqtt_client = mqtt.Client(client_id=MQTT_CLIENT_ID)
+mqtt_client = mqtt.Client(client_id=MQTT_CLIENT_ID, protocol=mqtt.MQTTv311)
 mqtt_client.username_pw_set("mqtt", "oxford")
 
 try:
