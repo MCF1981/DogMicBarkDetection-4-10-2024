@@ -99,3 +99,4 @@ Then:
 git add README.md
 git commit -m "📖 Clean up Bark Server README with Docker, HA, MQTT integration"
 git push
+# DogMicBarkDetection-4-10-2024
