@@ -10,6 +10,9 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 import json
 import traceback
+import atexit
+import threading
+import time
 
 # ✅ Logging config
 LOG_PATH = "bark_server.log"
@@ -31,9 +34,49 @@ class_map_path = tf.keras.utils.get_file(
 )
 class_names = [line.strip().split(',')[2] for line in open(class_map_path).readlines()[1:]]
 
-# 📡 MQTT config
+# 📡 ) config
 MQTT_BROKER = "192.168.68.92"
 MQTT_TOPIC = "dogmic/audio_prediction"
+MQTT_HEARTBEAT_TOPIC = "dogmic/heartbeat"
+MQTT_CLIENT_ID = "bark_server"
+
+# 🔌 Persistent MQTT Client Setup
+mqtt_client = mqtt.Client(client_id=MQTT_CLIENT_ID)
+mqtt_client.username_pw_set("mqtt", "oxford")
+
+try:
+    mqtt_client.connect(MQTT_BROKER, 1883, 60)
+    mqtt_client.loop_start()
+    logging.info("📡 MQTT client connected and loop started.")
+except Exception as e:
+    logging.error(f"[MQTT INIT ERROR] {e}")
+    logging.error(traceback.format_exc())
+
+# Clean disconnect on exit
+@atexit.register
+def shutdown_mqtt():
+    try:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+        logging.info("📴 MQTT client cleanly disconnected.")
+    except Exception as e:
+        logging.error(f"[MQTT DISCONNECT ERROR] {e}")
+
+# 🫀 MQTT Heartbeat thread
+def publish_heartbeat():
+    while True:
+        payload = json.dumps({
+            "status": "alive",
+            "timestamp": datetime.now().isoformat()
+        })
+        try:
+            mqtt_client.publish(MQTT_HEARTBEAT_TOPIC, payload)
+            logging.debug(f"[MQTT] Heartbeat sent: {payload}")
+        except Exception as e:
+            logging.error(f"[MQTT HEARTBEAT ERROR] {e}")
+        time.sleep(60)
+
+threading.Thread(target=publish_heartbeat, daemon=True).start()
 
 # 🚀 Flask app
 app = Flask(__name__)
@@ -63,29 +106,22 @@ def upload():
         with open(CSV_LOG, "a") as f:
             f.write(f"{datetime.now().isoformat()},{label},{confidence:.2f}\n")
 
-        # ✅ MQTT publish block using proper JSON payload
+        # ✅ MQTT publish block using persistent client
         try:
             mqtt_payload = json.dumps({
                 "label": label,
-                "db": float(round(confidence * 100, 1))
+                "confidence": float(round(confidence * 100, 1)),
+                "db": float(round(librosa.amplitude_to_db(np.abs(waveform), ref=np.max).mean(), 1))
             })
 
             print(f"[DEBUG] MQTT outgoing payload: {mqtt_payload}", flush=True)
             logging.info(f"[MQTT] Payload being sent: {mqtt_payload}")
 
-            client = mqtt.Client(client_id="bark_server")
-            client.username_pw_set("mqtt", "oxford")
-            client.connect(MQTT_BROKER, 1883, 60)
-
-            client.loop_start()
-            result = client.publish(MQTT_TOPIC, mqtt_payload)
+            result = mqtt_client.publish(MQTT_TOPIC, mqtt_payload)
             result.wait_for_publish()
-            client.loop_stop()
 
             print(f"[DEBUG] Published to MQTT: {mqtt_payload}", flush=True)
             logging.info(f"[MQTT] Published to topic {MQTT_TOPIC}")
-
-            client.disconnect()
 
         except Exception as mqtt_error:
             print(f"[ERROR] MQTT publish failed: {mqtt_error}", flush=True)
@@ -99,6 +135,24 @@ def upload():
         logging.error(traceback.format_exc())
         return 'Upload error', 500
 
+@app.route("/esp-log", methods=["POST"])
+def esp_log():
+    try:
+        data = request.get_json()
+        label = data.get("label", "unknown").lower()
+        confidence = float(data.get("confidence", 0))
+        volume = int(data.get("volume", 0))
+        timestamp = datetime.now().isoformat()
+
+        logging.info(f"[ESP32] 🔊 {label} | confidence: {confidence:.2f} | volume: {volume}")
+        with open("bark_esp_log.csv", "a") as f:
+            f.write(f"{timestamp},{label},{confidence:.2f},{volume}\n")
+
+        return {"status": "ok"}, 200
+    except Exception as e:
+        logging.error(f"[ESP-LOG ERROR] {e}")
+        return {"error": str(e)}, 500
+
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
@@ -108,7 +162,7 @@ def predict():
         if label.lower() == "bark":
             logging.info("🐶 Bark detected.")
         elif label.lower() == "silence":
-            logging.info("🔇 Silence detected.")
+            logging.info("�� Silence detected.")
         else:
             logging.info(f"🔍 Detected: {label}")
 
@@ -160,14 +214,16 @@ def get_latest_image():
 def root():
     return {
         "status": "bark_server running",
-        "routes": ["/upload", "/predict", "/log", "/image", "/health"]
+        "routes": ["/upload", "/esp-log", "/predict", "/log", "/image", "/health"]
     }
 
 @app.route("/health", methods=["GET"])
 def health():
     try:
+        logging.info("[HEALTH] Health check ping received")
         return {"status": "ok", "model_loaded": yamnet_model is not None}, 200
     except Exception as e:
+        logging.error("[HEALTH ERROR] " + str(e))
         return {"status": "error", "error": str(e)}, 500
 
 if __name__ == "__main__":
