@@ -84,6 +84,7 @@ app = Flask(__name__)
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
+        print(f"[UPLOAD] Received audio — length: {len(request.data)}", flush=True)
         raw_audio = np.frombuffer(request.data, dtype=np.uint8)
 
         with open("last_audio.raw", "wb") as f:
