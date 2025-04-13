@@ -83,9 +83,11 @@ app = Flask(__name__)
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    logging.info("[UPLOAD] 🔥 Received POST at /upload")
+
     try:
-        print(f"[UPLOAD] Received audio — length: {len(request.data)}", flush=True)
         raw_audio = np.frombuffer(request.data, dtype=np.uint8)
+        logging.info(f"[UPLOAD] Received {len(raw_audio)} bytes")
 
         with open("last_audio.raw", "wb") as f:
             f.write(request.data)
@@ -94,6 +96,7 @@ def upload():
         resampled = scipy.signal.resample(float_audio, 16000)
         waveform = resampled.reshape(-1)
 
+        logging.debug("[UPLOAD] 🧠 Running YAMNet...")
         scores, embeddings, spectrogram = yamnet_model(waveform)
         scores_np = scores.numpy()
         mean_scores = np.mean(scores_np, axis=0)
@@ -101,31 +104,30 @@ def upload():
         label = class_names[top_class]
         confidence = mean_scores[top_class]
 
-        print(f"[DEBUG] Upload prediction: {label} ({confidence:.2f})", flush=True)
-        logging.info(f"[UPLOAD] {len(raw_audio)} bytes → {label} ({confidence:.2f})")
+        logging.info(f"[UPLOAD] ✅ Prediction: {label} ({confidence:.2f})")
 
         with open(CSV_LOG, "a") as f:
             f.write(f"{datetime.now().isoformat()},{label},{confidence:.2f}\n")
 
-        # ✅ MQTT publish block using persistent client
+        # ✅ MQTT publish
         try:
+            db = float(round(librosa.amplitude_to_db(np.abs(waveform), ref=np.max).mean(), 1))
             mqtt_payload = json.dumps({
                 "label": label,
                 "confidence": float(round(confidence * 100, 1)),
-                "db": float(round(librosa.amplitude_to_db(np.abs(waveform), ref=np.max).mean(), 1))
+                "db": db
             })
 
-            print(f"[DEBUG] MQTT outgoing payload: {mqtt_payload}", flush=True)
-            logging.info(f"[MQTT] Payload being sent: {mqtt_payload}")
-
+            logging.debug(f"[MQTT] Prepared payload: {mqtt_payload}")
             result = mqtt_client.publish(MQTT_TOPIC, mqtt_payload)
             result.wait_for_publish()
 
-            print(f"[DEBUG] Published to MQTT: {mqtt_payload}", flush=True)
-            logging.info(f"[MQTT] Published to topic {MQTT_TOPIC}")
+            if result.rc == 0:
+                logging.info(f"[MQTT] ✅ Published: {mqtt_payload}")
+            else:
+                logging.error(f"[MQTT] ❌ Failed to publish (rc={result.rc})")
 
         except Exception as mqtt_error:
-            print(f"[ERROR] MQTT publish failed: {mqtt_error}", flush=True)
             logging.error(f"[MQTT ERROR] {mqtt_error}")
             logging.error(traceback.format_exc())
 
@@ -135,7 +137,7 @@ def upload():
         logging.error(f"[UPLOAD ERROR] {e}")
         logging.error(traceback.format_exc())
         return 'Upload error', 500
-
+  
 @app.route("/esp-log", methods=["POST"])
 def esp_log():
     try:
