@@ -1,102 +1,127 @@
-# 🐾 Bark Server — Flask + TensorFlow YAMNet Audio Classifier
+# 🐾 Bark Server — ESP32 + Flask + YAMNet + MQTT + Home Assistant
 
-This is the Dockerized Flask server that accepts 1-second audio clips (raw 8-bit, 16kHz), classifies them using YAMNet (TensorFlow), and publishes predictions to MQTT for Home Assistant automations.
+This server receives 1-second audio clips (raw 8-bit, 16kHz) from an ESP32 microphone, classifies them using TensorFlow's YAMNet model, and publishes predictions to MQTT for Home Assistant dashboards and automations.
 
-## 🚀 Features
-
-- Flask server with endpoints: `/upload`, `/log`, `/predict`, `/image`, `/health`
-- Classifies sounds via [YAMNet](https://tfhub.dev/google/yamnet/1) from TensorFlow Hub
-- Publishes prediction to `dogmic/audio_prediction` via MQTT
-- Generates `latest_plot.png` and `bark_log.csv` for logging
-- Fully containerized via Docker
-
-## 📦 Project Structure
-bark_server/
-├── app.py                # Flask app
-├── requirements.txt      # Python deps
-├── bark_log.csv          # CSV of all predictions
-├── bark_server.log       # Server logs
-├── yamnet_plot.py        # Spectrogram plotting
-├── last_audio.raw/.wav   # Most recent raw + converted audio
-├── latest_plot.png       # Most recent spectrogram
-└── Dockerfile
 ---
 
-## 🐳 Docker Usage
+## 🚀 Features
+- Flask API with routes: `/upload`, `/log`, `/predict`, `/image`, `/health`
+- TensorFlow + YAMNet sound classification
+- MQTT output to topic: `dogmic/audio_prediction`
+- CSV logging + waveform plotting
+- Docker support with persistent MQTT client
 
-# Build the image
-docker build -t bark-server .
+---
 
-# Run the container
-docker run -d \
-  --name bark-server \
-  -p 5050:5050 \
-  --restart always \
-  bark-server
+## 📦 Project Structure
 
-## 🔬 API Endpoints
+bark_server/
+├── app.py               # Flask server
+├── Dockerfile           # Container definition
+├── requirements.txt     # Python dependencies
+├── bark_log.csv         # CSV log of predictions
+├── bark_server.log      # Server + MQTT debug log
+├── latest_plot.png      # Spectrogram image (optional)
+├── last_audio.raw       # Raw audio buffer (latest)
+├── yamnet_plot.py       # Plotting util
+└── test.raw             # 1s of silence for testing
 
-| Method | Endpoint   | Description                         |
-|--------|------------|-------------------------------------|
-| POST   | `/upload`  | Raw 8-bit 1s audio, returns label   |
-| POST   | `/predict` | Prediction from audio chunk         |
-| POST   | `/log`     | Logs from ESP32                     |
-| GET    | `/image`   | Returns `latest_plot.png`           |
-| GET    | `/health`  | Returns model + server status       |
+---
 
-## 🧪 Test It Locally
-# Generate silent test audio (1s @ 16kHz)
+## 📡 MQTT Format
+- **Topic:** `dogmic/audio_prediction`
+- **Payload Example:**
+```json
+{
+  "label": "Domestic dogs",
+  "confidence": 92.5,
+  "db": 71.1
+}
+
+
+
+⸻
+
+🧪 Local Testing
+
+# Generate silent 1s sample (raw, 8-bit, 16kHz)
 dd if=/dev/zero bs=1 count=16000 of=test.raw
 
-# Send it to /upload
+# POST to upload endpoint
 curl -X POST http://localhost:5050/upload \
   --data-binary @test.raw \
   -H "Content-Type: application/octet-stream"
 
-⸻
-
-🏠 Home Assistant Integration
-	•	MQTT Topic: dogmic/audio_prediction
-	•	Broker: 192.168.68.92 (HA IP)
-	•	Example HA sensors:
-	•	binary_sensor.bark_detected
-	•	sensor.bark_detected_status
-	•	sensor.dog_mic_volume_db
 
 
 ⸻
 
-📊 Dashboard Cards
+🐳 Docker Commands
 
-See dogmic-system/dashboards/dogmic-dashboard.yaml
-	•	Mic Volume (Gauge)
-	•	Prediction (Markdown)
-	•	Snapshot preview
-	•	Tunnel health status
+# Build container
+docker build -t bark_server .
+
+# Run with automatic restart
+docker run -d \
+  --name bark_server \
+  --network host \
+  --restart unless-stopped \
+  bark_server
+
+
 
 ⸻
 
-🧯 Recovery Notes
-	•	If HA tunnel breaks, restart Cloudflared add-on
-	•	Rebuild Flask container:
-docker stop bark-server
-docker rm bark-server
-docker build -t bark-server .
-docker run -d --name bark-server -p 5050:5050 --restart always bark-server
+🧠 Home Assistant
 
-🧠 Maintained by @MCF1981
+Ensure MQTT integration is set up. Add sensors:
 
-Part of the CottageFarm Smart Home System
+mqtt:
+  sensor:
+    - name: "Dog Bark Label"
+      unique_id: dog_bark_label
+      state_topic: "dogmic/audio_prediction"
+      value_template: "{{ value_json.label }}"
+
+    - name: "Dog Bark Confidence"
+      unique_id: dog_bark_confidence
+      state_topic: "dogmic/audio_prediction"
+      value_template: "{{ value_json.confidence }}"
+      unit_of_measurement: "%"
+      device_class: battery
+
+    - name: "Dog Bark Volume (dB)"
+      unique_id: dog_bark_volume_db
+      state_topic: "dogmic/audio_prediction"
+      value_template: "{{ value_json.db }}"
+      unit_of_measurement: "dB"
+
+
+
+⸻
+
+📊 Dashboard Ideas
+	•	Markdown (Detected Sound)
+	•	Gauge (dB)
+	•	History Graph (Confidence)
+	•	MQTT Status Tile
+
+⸻
+
+🧯 Troubleshooting
+	•	Port conflict: sudo lsof -i :5050
+	•	No MQTT logs: ensure broker IP + port (1883)
+	•	Sound = Silence: check mic input or ESP signal quality
+
+⸻
+
+📎 Related Projects
+	•	dogmic-max4466: ESP32 firmware
+	•	home-assistant-config: HA dashboards + automation
+	•	dogcam-esp32: Snapshot camera integration
+
+⸻
+
+🧠 Maintained by @MCF1981 — Part of the CottageFarm Smart Home System
+
 MIT License
----
-
-### ✅ Next Steps:
-
-```bash
-cd ~/bark_server
-nano README.md      # paste the above into the file
-Then:
-git add README.md
-git commit -m "📖 Clean up Bark Server README with Docker, HA, MQTT integration"
-git push
-# DogMicBarkDetection-4-10-2024

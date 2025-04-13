@@ -14,15 +14,21 @@ import atexit
 import threading
 import time
 
-# ✅ Logging config
 LOG_PATH = "bark_server.log"
 CSV_LOG = "bark_log.csv"
 
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.DEBUG,
-    format='%(asctime)s — %(levelname)s — %(message)s'
-)
+log_formatter = logging.Formatter('%(asctime)s — %(levelname)s — %(message)s')
+
+file_handler = logging.FileHandler(LOG_PATH)
+file_handler.setFormatter(log_formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(log_formatter)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
 
 logging.info("✅ Bark server started.")
 
@@ -83,6 +89,7 @@ app = Flask(__name__)
 
 @app.route("/upload", methods=["POST"])
 def upload():
+    logging.info(f"[UPLOAD] 🔥 Received POST at /upload from {request.remote_addr}")
     logging.info("[UPLOAD] 🔥 Received POST at /upload")
 
     try:
@@ -96,6 +103,7 @@ def upload():
         resampled = scipy.signal.resample(float_audio, 16000)
         waveform = resampled.reshape(-1)
 
+        
         logging.debug("[UPLOAD] 🧠 Running YAMNet...")
         scores, embeddings, spectrogram = yamnet_model(waveform)
         scores_np = scores.numpy()
@@ -103,6 +111,10 @@ def upload():
         top_class = np.argmax(mean_scores)
         label = class_names[top_class]
         confidence = mean_scores[top_class]
+        logging.debug(f"[YAMNET] Scores shape: {scores_np.shape}")
+        logging.debug(f"[YAMNET] Mean scores: {mean_scores[:5]}... (truncated)")
+        logging.debug(f"[YAMNET] Top class index: {top_class} → {label}")
+        logging.debug(f"[YAMNET] Confidence: {confidence}")
 
         logging.info(f"[UPLOAD] ✅ Prediction: {label} ({confidence:.2f})")
 
@@ -111,16 +123,18 @@ def upload():
 
         # ✅ MQTT publish
         try:
-            db = float(round(librosa.amplitude_to_db(np.abs(waveform), ref=np.max).mean(), 1))
+            amplitude_db = float(round(librosa.amplitude_to_db(np.abs(waveform), ref=np.max).mean(), 1))
+            logging.debug(f"[UPLOAD] Amplitude dB: {amplitude_db}")
             mqtt_payload = json.dumps({
                 "label": label,
                 "confidence": float(round(confidence * 100, 1)),
-                "db": db
+                "db": amplitude_db
             })
 
             logging.debug(f"[MQTT] Prepared payload: {mqtt_payload}")
             result = mqtt_client.publish(MQTT_TOPIC, mqtt_payload)
             result.wait_for_publish()
+            logging.info(f"DEBUG MQTT] publish result.rc = {result.rc}")
 
             if result.rc == 0:
                 logging.info(f"[MQTT] ✅ Published: {mqtt_payload}")
